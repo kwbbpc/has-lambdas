@@ -10,6 +10,9 @@ import com.amazonaws.services.dynamodbv2.document.*;
 import com.amazonaws.services.dynamodbv2.document.spec.UpdateItemSpec;
 import com.amazonaws.services.dynamodbv2.model.ReturnValue;
 import com.amazonaws.services.dynamodbv2.model.UpdateItemRequest;
+import com.broadway.has.lambda.weather.averager.LambdaFunctionHandler;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 
@@ -35,12 +38,17 @@ public class HourlyTemperatureAverager implements WeatherAverager{
 	private final DynamoDB dynamoDB;
 	private final AmazonDynamoDB dbClient;
 	private final Table avgTemps;
-	
+
+
+	private static final Logger logger = LogManager.getLogger(HourlyTemperatureAverager.class);
+
 	public HourlyTemperatureAverager() {
+
+		logger.info("Initializing temperature averager: {}, {}", tableName, Regions.US_EAST_1);
+
 		this.dbClient = new AmazonDynamoDBClient();
 		this.dbClient.setRegion(Region.getRegion(Regions.US_EAST_1));
         this.dynamoDB = new DynamoDB(this.dbClient);
-        System.out.println("init done");
         this.avgTemps = dynamoDB.getTable(tableName);
 
 	}
@@ -67,7 +75,7 @@ public class HourlyTemperatureAverager implements WeatherAverager{
 		//get the timeslot for this time
 		DateTime timeslot = getTimeslot(timestamp);
 		
-		System.out.println("Getting timeslot " + timeslot.toDateTimeISO().toString());
+		logger.debug("Getting timeslot " + timeslot.toDateTimeISO().toString());
 		
 		//get the average temp for this timeslot
 		QuerySpec query = new QuerySpec()
@@ -75,12 +83,33 @@ public class HourlyTemperatureAverager implements WeatherAverager{
                 .withValueMap(new ValueMap().withString(":v_id", nodeId)
                                             .withString(":timeslot", timeslot.toDateTimeISO().toString()))
                 .withMaxResultSize(1);
+
+		logger.debug("Issuing find query for timeslot: {}", query.toString());
 		
 		ItemCollection<QueryOutcome> items = avgTemps.query(query);
 		
 		Iterator<Item> timeslotIter = items.iterator();
-		
-		if(timeslotIter.hasNext()) {
+
+		if(!timeslotIter.hasNext()){
+			logger.info("No timeslots were found for {}.  Creating a new entry.", timeslot);
+
+			//create it new.
+			JsonNode newAverageEntry = createNewAverageEntry(timeslot, timestamp, coreRecord);
+
+			String a = newAverageEntry.path("temperature").toString();
+			//insert the new average
+			Item item = new Item().withPrimaryKey("nodeId", nodeId, "timeslot", timeslot.toString());
+			item.withJSON("temperature", newAverageEntry.path("temperature").toString());
+			item.withJSON("recordTimestamps", newAverageEntry.path("recordTimestamps").toString());
+			item.withJSON("lastUpdatedTimestamps", newAverageEntry.path("lastUpdatedTimestamps").toString());
+			item.withString("lastUpdated", newAverageEntry.path("lastUpdated").toString());
+
+			avgTemps.putItem(item);
+		}
+		else {
+
+			logger.info("Adding point to existing timeslot for {}", timeslot);
+
 			//if the timeslot already exists, add this to the running sum
 			Item runningAverage = timeslotIter.next();
 			
@@ -96,8 +125,6 @@ public class HourlyTemperatureAverager implements WeatherAverager{
 			++totalPts;
 			
 			//update the item
-
-
 			String lastUpdatedTimestampStr = DateTime.now().toDateTimeISO().toString();
 			List<String> lastUpdatedTimestamp = new ArrayList<String>(){{add(DateTime.now().toDateTimeISO().toString());}};
 			List<String> createdDate = new ArrayList<String>(){{add(coreRecord.get("createdDate").textValue());}};
@@ -105,7 +132,6 @@ public class HourlyTemperatureAverager implements WeatherAverager{
 
 
 			//update the item in dynamo
-
 			String updateExpression =
 					"SET temperature.temperature = :newAvg, " +
 							"temperature.numberOfPoints = :totalPts, " +
@@ -115,7 +141,6 @@ public class HourlyTemperatureAverager implements WeatherAverager{
 
 			UpdateItemSpec update = new UpdateItemSpec()
 					.withPrimaryKey("nodeId", nodeId, "timeslot", timeslot.toDateTimeISO().toString())
-
 					.withUpdateExpression(updateExpression)
 					.withValueMap(new ValueMap()
 						.withNumber(":newAvg", newAvg)
@@ -125,71 +150,16 @@ public class HourlyTemperatureAverager implements WeatherAverager{
 						.withList(":createdDate", createdDate))
 					.withReturnValues(ReturnValue.ALL_NEW);
 
+			logger.info("Updating item {} from temp {} to new avg temp {}", nodeId, avgTemp, newAvg);
+
 			UpdateItemOutcome result = avgTemps.updateItem(update);
 
-			System.out.println("Result: " + result.getItem().toJSONPretty());
-			
-		}else {
-
-
-			//otherwise, create it new.
-			JsonNode newAverageEntry = createNewAverageEntry(timeslot, timestamp, coreRecord);
-
-			String a = newAverageEntry.path("temperature").toString();
-			//insert the new average
-			Item item = new Item().withPrimaryKey("nodeId", nodeId, "timeslot", timeslot.toString());
-			item.withJSON("temperature", newAverageEntry.path("temperature").toString());
-			item.withJSON("recordTimestamps", newAverageEntry.path("recordTimestamps").toString());
-			item.withJSON("lastUpdatedTimestamps", newAverageEntry.path("lastUpdatedTimestamps").toString());
-			item.withString("lastUpdated", newAverageEntry.path("lastUpdated").toString());
-
-			avgTemps.putItem(item);
-
-
+			logger.debug("Result from update: " + result.getItem().toJSONPretty());
 			
 		}
 		
 		
 	}
-
-	
-	/*
-	 * { 
-   \"messageId\":0,
-   \"nodeId\":\"0013A200406B8D09\",
-   \"nodeInfo\":{ 
-      \"address64bit\":\"0013A200406B8D09\",
-      \"address16bit\":\"3BD7\",
-      \"firmwareVersion\":null,
-      \"hardwareVersion\":null,
-      \"hardwareVersionId\":0,
-      \"nodeId\":null,
-      \"panId\":null,
-      \"xbeeProtocol\":\"ZigBee\"
-   },
-   \"payload\":\"DczMkkIVAADoQQ==\",
-   \"encoding\":\"base64\"
-}
-	 */
-	
-	
-	/*
-	 * {
-
-  "nodeId"
-  "timeslot"
-  "lastUpdated"
-  "temperature"{
-    "numberOfPoints",
-    "temperature",
-    "units"
-  },
-  "recordTimestamps": [],
-  "lastUpdatedTimestamps": []
-
-}
-	 */
-	
 	
 	
 	private JsonNode createNewAverageEntry(DateTime timeslot, DateTime timestamp, JsonNode sqsEvent) {

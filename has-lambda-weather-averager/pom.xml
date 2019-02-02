@@ -6,7 +6,10 @@
 	<groupId>com.broadway.has.lambda.weather.averager</groupId>
 	<artifactId>has-lambda-weather-averager</artifactId>
 	<version>1.0.0</version>
-	<packaging>jar</packaging>
+    <modules>
+        <module>../get-humidity</module>
+    </modules>
+    <packaging>pom</packaging>
 
 	<build>
 		<plugins>

@@ -37,7 +37,7 @@ public class LambdaFunctionHandler implements RequestHandler<DynamodbEvent, Stri
 	            try {
 	
 	                String l = JsonUtils.MAPPER.writeValueAsString(JsonUtils.MAPPER.valueToTree(record.getDynamodb()));
-	                System.out.println("Got new record: " + l);
+	                logger.info("Got new record: " + l);
 	
 	                Item coreItem = ItemUtils.toItem(record.getDynamodb().getNewImage());
 	                JsonNode coreRecord = JsonUtils.MAPPER.valueToTree(coreItem.asMap());
@@ -50,7 +50,7 @@ public class LambdaFunctionHandler implements RequestHandler<DynamodbEvent, Stri
 	                //handle the humidity average
 	
 	            }catch (Exception e){
-	                System.err.println(e);
+	                logger.error("Error getting record: {}", e);
 	            }
         	
 	        }
