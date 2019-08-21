@@ -17,7 +17,7 @@ import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 
 
-@JsonSerialize(using = SingleTemperatureEntry.CustomSerializer.class)
+//@JsonSerialize(using = SingleTemperatureEntry.CustomSerializer.class)
 public class SingleTemperatureEntry implements TemperatureEntry{
 
 
@@ -52,27 +52,7 @@ public class SingleTemperatureEntry implements TemperatureEntry{
     public String getUnits() {
         return units;
     }
-    
-    public class CustomSerializer extends JsonSerializer<SingleTemperatureEntry> {
 
-
-        @Override
-        public void serialize(SingleTemperatureEntry value, JsonGenerator jgen, 
-                              SerializerProvider arg2)
-            throws IOException, JsonProcessingException {
-/*
-        	jgen.writeStartObject();
-            jgen.writeStringField("temperature", Float.toString(value.getTemperature()));
-            jgen.writeStringField("units", value.getUnits());
-            jgen.writeStringField("indexedDate", value.getIndexedDate().toDateTimeISO().toString());
-            jgen.writeStringField("timestamp", value.getTimestamp().toDateTimeISO().toString());
-
-
-
-            jgen.writeEndObject();
-  */      	
-        }
-    }
 }
 
 
